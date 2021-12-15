@@ -6,6 +6,7 @@ MAX_NUM_TRIALS = 30
 SLEEP_BTWN_TRIALS = 0.2
 ###################################################################################
 groupTxts = []
+myDict = {"Names": [],  "Groups": [], "Retrived@": [], "Disclaimer": []}
 importSuccess = False
 print("Importing libraries...")
 from msvcrt import getch
@@ -22,11 +23,22 @@ try:
     from selenium.webdriver.common.keys import Keys
     from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.support.ui import Select
-    
+
+    # pandas
+    import pandas as pd
+
     importSuccess = True
+
 except ImportError:
     print("It seems that some libraries has not beeen installed yet.")
     print("Did you installed all libraries in the 'requirements.txt' ?")
+
+ctypes.windll.kernel32.SetConsoleTitleW("EE361 Group finder")
+pd.set_option("max_columns", None) # Show all rows and coloumns
+pd.set_option("max_rows", None)    # Show all rows and coloumns
+
+#################################################################################################
+"""Scraping"""
 
 def isLoaded():
     pageState = myBrowser.execute_script('return document.readyState;')
@@ -157,11 +169,12 @@ if importSuccess:
                 print("Number must be an integer")
         if number > -1:
             groupTxts = [item for item in groupTxts if f"Exp-{number}" in item]
-        customDT = datetime.datetime.now().strftime('%Y-%m-%d_%H.%M.%S')
-        print(f"{customDT}: {len(groupTxts)} group found. Scraping started!")
-        filename = "Scraped" + customDT + ".txt"
+        customDTStart = datetime.datetime.now().strftime('%Y-%m-%d_%H.%M.%S')
+        disclaimerString = f"{'EE361 Experiment Groups'.center(75, '=')}\nRetrieved @ {customDTStart} from ODTUCLASS\nDisclaimer: Developer is not responsible for any wrong data. Use this document by acknowledging this.\n{'='*75}\n\n"
+        print(f"{customDTStart}: {len(groupTxts)} group found. Scraping started!")
+        filename = "Scraped_" + customDTStart + ".txt"
         with open(filename, "a", encoding="utf-8") as fil:
-            fil.write(f"{'EE361 Experiment Groups'.center(75, '=')}\nRetrieved @ {customDT} from ODTUCLASS\nDisclaimer: Developer is not responsible for any wrong data. Use this document by acknowledging this.\n{'='*75}\n\n")
+            fil.write(disclaimerString)
         for i, groupTxt in enumerate(groupTxts):
             myBrowser.refresh()
             waitUntilLoaded()
@@ -170,6 +183,11 @@ if importSuccess:
             print(res.rjust(5))
             with open(filename, "a", encoding="utf-8") as fil:
                 fil.write(f"--> {groupTxt}\n{res}{'-'*30}\n")
+            nameArr = res.splitlines()
+            for name in nameArr:
+                myDict["Names"].append(name)
+                myDict["Groups"].append(groupTxt)
+                myDict["Retrived@"].append(datetime.datetime.now().strftime('%Y-%m-%d_%H.%M.%S'))
         customDT = datetime.datetime.now().strftime('%Y-%m-%d_%H.%M.%S')
         print(f"{customDT}: Scraping completed succesfully.")
         with open(filename, "a", encoding="utf-8") as fil:
@@ -180,7 +198,45 @@ if importSuccess:
     except (Exception, OSError, RuntimeError, ImportError, ValueError, IOError, IndexError, OverflowError, TypeError, ArithmeticError) as ex:
         print("An error occured:")
         print(ex)
+#################################################################################################
 
+#################################################################################################
+"""Preparing to Excel Writing"""
+
+myDict["Disclaimer"] = ["Developer is not responsible for any wrong data. Use this document by acknowledging this." for i in range(len(myDict["Names"]))] 
+df = pd.DataFrame(myDict)
+df["Number"] = df.index + 1
+df = df[["Number", "Groups", "Names", "Retrived@", "Disclaimer"]]
+print(df.to_string(index=False))
+
+#################################################################################################
+
+#################################################################################################
+"""Excel Writing"""
+
+# Please see the below sources for further information
+# https://stackoverflow.com/questions/22831520/how-to-do-excels-format-as-table-in-python
+# https://xlsxwriter.readthedocs.io/example_pandas_table.html
+# https://xlsxwriter.readthedocs.io/working_with_tables.html
+# https://stackoverflow.com/questions/17326973/is-there-a-way-to-auto-adjust-excel-column-widths-with-pandas-excelwriter
+
+print("Writing to excel file...")
+writer = pd.ExcelWriter(f"Groups_{customDTStart}.xlsx", engine='xlsxwriter')
+df.to_excel(writer, sheet_name="Groups", index=False, startrow=1, header=False)
+workbook = writer.book
+worksheet = writer.sheets['Groups']
+(rowCou, ColCou) = df.shape
+columnSettings = [{'header': column} for column in df.columns]
+worksheet.add_table(0, 0, rowCou, ColCou - 1, {'columns': columnSettings, 'style': 'Table Style Medium 4'})
+for i, column in enumerate(df.columns):
+    colLen = df[column].astype(str).str.len().max()
+    colLen = max(colLen, len(column)) # colLen is the maximum length of the rows in this column. And len(column) is the length of the header of this column
+    worksheet.set_column(first_col=i, last_col=i, width=colLen)
+
+writer.save()
+#################################################################################################
+
+print("Writing completed. Press any key to exit...")
 print("Press any key to exit.")
 getch()
 try:
